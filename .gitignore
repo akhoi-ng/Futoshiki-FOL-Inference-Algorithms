@@ -1,8 +1,43 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.DS_Store
-.env
+*.pyd
+.Python
+*.so
+*.egg
 *.egg-info/
 dist/
 build/
+*.log
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Output files (optional - uncomment if you want to commit outputs)
+# Source/Outputs/*.txt
+# !Source/Outputs/.gitkeep
+
+# Test and Debug files
+*_test.py
+*_debug.py
+test_*.py
+debug_*.py
+
