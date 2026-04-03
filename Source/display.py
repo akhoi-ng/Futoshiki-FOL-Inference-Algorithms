@@ -1,105 +1,139 @@
-def print_header(algorithm_name, input_file, grid_size):
-    """In header cho chuong trinh."""
-    print("\n" + "="*60)
-    print(f"     FUTOSHIKI SOLVER - {algorithm_name.upper()}")
-    print("="*60)
-    print(f"Input: {input_file}")
-    print(f"Kich thuoc: {grid_size}x{grid_size}")
-    print("="*60)
 
+# ================================================================
+# HEADER
+# ================================================================
+
+def print_header(algorithm_name, input_file, grid_size):
+    """In header cho chương trình."""
+    print("\n" + "=" * 60)
+    print(f"     FUTOSHIKI SOLVER - {algorithm_name.upper()}")
+    print("=" * 60)
+    print(f"  Input : {input_file}")
+    print(f"  Size  : {grid_size}x{grid_size}")
+    print("=" * 60)
+
+
+# ================================================================
+# FORMAT GRID — đúng theo yêu cầu đề bài
+# ================================================================
 
 def format_grid(puzzle, assignment):
-    """Format grid thanh ASCII art voi cac rang buoc."""
+    """
+    Format lời giải thành chuỗi ASCII với đầy đủ ký hiệu:
+      <, >  : horizontal inequality
+      ^     : top < bottom  (vertical)
+      v     : top > bottom  (vertical)
+
+    Đây là format đề bài yêu cầu trong output.
+    """
     N = puzzle.N
     lines = []
-    
+
     for r in range(N):
-        # Main row
+        # ── Hàng số ──
         row_parts = []
         for c in range(N):
-            if (r, c) in assignment:
-                val = str(assignment[(r, c)])
-            else:
-                val = "_"
+            val = str(assignment[(r, c)]) if (r, c) in assignment else "_"
             row_parts.append(val)
-            
-            # Horizontal constraint
+
             if c < N - 1:
-                if puzzle.h_con[r][c] == 1:
+                con = puzzle.h_con[r][c]
+                if con == 1:
                     row_parts.append("<")
-                elif puzzle.h_con[r][c] == -1:
+                elif con == -1:
                     row_parts.append(">")
                 else:
                     row_parts.append(" ")
-        
+
         lines.append(" ".join(row_parts))
-        
-        # Vertical constraint row
+
+        # ── Hàng ký hiệu vertical (trừ hàng cuối) ──
         if r < N - 1:
-            v_row_parts = []
+            v_parts = []
             for c in range(N):
-                if puzzle.v_con[r][c] == 1:
-                    v_row_parts.append("^")
-                elif puzzle.v_con[r][c] == -1:
-                    v_row_parts.append("v")
+                con = puzzle.v_con[r][c]
+                if con == 1:
+                    v_parts.append("^")
+                elif con == -1:
+                    v_parts.append("v")
                 else:
-                    v_row_parts.append(" ")
-                
+                    v_parts.append(" ")
+
                 if c < N - 1:
-                    v_row_parts.append(" ")
-            
-            lines.append(" ".join(v_row_parts))
-    
+                    v_parts.append(" ")
+
+            lines.append(" ".join(v_parts))
+
     return "\n".join(lines)
 
+
+def print_solution(puzzle, assignment):
+    """In lời giải ra màn hình và trả về string."""
+    result = format_grid(puzzle, assignment)
+    print(result)
+    return result
+
+
+# ================================================================
+# STATISTICS
+# ================================================================
 
 def format_statistics(stats):
-    """Format statistics dictionary thanh string."""
-    lines = ["\nThong ke:"]
-    lines.append("-" * 40)
-    
-    if 'time' in stats:
-        lines.append(f"  Thoi gian: {stats['time']:.3f} giay")
-    
-    if 'nodes' in stats:
-        lines.append(f"  Nodes explored: {stats['nodes']}")
-    
-    if 'backtracks' in stats:
-        lines.append(f"  Backtracks: {stats['backtracks']}")
-    
-    if 'inferences' in stats:
-        lines.append(f"  Inferences made: {stats['inferences']}")
-    
-    if 'iterations' in stats:
-        lines.append(f"  Iterations: {stats['iterations']}")
-    
-    if 'depth' in stats:
-        lines.append(f"  Solution depth: {stats['depth']}")
-    
-    lines.append("-" * 40)
-    
+    """
+    Format dict thống kê thành chuỗi đẹp.
+    Dùng cho báo cáo — hỗ trợ mọi key có thể có.
+    """
+    lines = ["\n  Thong ke:"]
+    lines.append("  " + "-" * 38)
+
+    key_labels = {
+        'time'       : "Thoi gian",
+        'nodes'      : "Nodes explored",
+        'backtracks' : "Backtracks",
+        'inferences' : "Inferences made",
+        'iterations' : "FC Iterations",
+        'depth'      : "Solution depth",
+        'heuristic'  : "Heuristic",
+    }
+
+    for key, label in key_labels.items():
+        if key in stats:
+            val = stats[key]
+            if key == 'time':
+                lines.append(f"  {label:<20}: {val:.4f} giay")
+            else:
+                lines.append(f"  {label:<20}: {val}")
+
+    lines.append("  " + "-" * 38)
     return "\n".join(lines)
 
 
-def save_solution(assignment, N, filepath):
-    """Luu solution vao file."""
-    with open(filepath, 'w', encoding='utf-8') as f:
-        f.write(f"{N}\n")
-        
-        for r in range(N):
-            row_values = []
-            for c in range(N):
-                if (r, c) in assignment:
-                    row_values.append(str(assignment[(r, c)]))
-                else:
-                    row_values.append("0")
-            
-            f.write(",".join(row_values) + "\n")
+# ================================================================
+# SAVE — lưu đúng format đề bài (có ký hiệu <, >, ^, v)
+# ================================================================
 
+def save_solution(puzzle, assignment, filepath):
+    """
+    Lưu lời giải ra file với đầy đủ ký hiệu,
+    đúng format đề bài yêu cầu.
+    """
+    import os
+    os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
+
+    result = format_grid(puzzle, assignment)
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(result + "\n")
+
+    print(f"  Da luu ket qua vao: {filepath}")
+
+
+# ================================================================
+# DEBUG
+# ================================================================
 
 def print_debug_domains(domains):
-    """In ra domains cua cac cells (for debugging)."""
-    print("\nDomains hien tai:")
+    """In domains của các ô — dùng khi debug."""
+    print("\n  [DEBUG] Domains hien tai:")
     for (r, c), vals in sorted(domains.items()):
-        vals_str = "{" + ",".join(map(str, sorted(vals))) + "}"
-        print(f"  Cell ({r},{c}): {vals_str}")
+        vals_str = "{" + ", ".join(map(str, sorted(vals))) + "}"
+        print(f"    O ({r},{c}): {vals_str}")
