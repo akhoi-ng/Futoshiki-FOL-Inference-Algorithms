@@ -98,3 +98,124 @@ def build_initial_assignment(puzzle):
             if puzzle.grid[r][c] != 0:
                 assignment[(r, c)] = puzzle.grid[r][c]
     return assignment
+
+
+# ================================================================
+# UTILITY FUNCTIONS — dùng chung cho FC, BC, A*
+# ================================================================
+
+def compute_domain(puzzle, assignment, r, c):
+    """
+    Tính tập giá trị còn hợp lệ cho ô (r, c)
+    dựa trên assignment hiện tại.
+    Áp dụng: row/col uniqueness + inequality constraints.
+    """
+    N = puzzle.N
+
+    # Loại giá trị đã dùng trong hàng và cột
+    used_row = {assignment[(r, col)] for col in range(N) if (r, col) in assignment}
+    used_col = {assignment[(row, c)] for row in range(N) if (row, c) in assignment}
+    domain = set(range(1, N + 1)) - used_row - used_col
+
+    # H-constraint: (r, c-1) < (r, c)  →  v > left
+    if c > 0 and puzzle.h_con[r][c - 1] == 1:
+        left = assignment.get((r, c - 1))
+        if left is not None:
+            domain = {v for v in domain if v > left}
+
+    # H-constraint: (r, c-1) > (r, c)  →  v < left
+    if c > 0 and puzzle.h_con[r][c - 1] == -1:
+        left = assignment.get((r, c - 1))
+        if left is not None:
+            domain = {v for v in domain if v < left}
+
+    # H-constraint: (r, c) < (r, c+1)  →  v < right
+    if c < N - 1 and puzzle.h_con[r][c] == 1:
+        right = assignment.get((r, c + 1))
+        if right is not None:
+            domain = {v for v in domain if v < right}
+
+    # H-constraint: (r, c) > (r, c+1)  →  v > right
+    if c < N - 1 and puzzle.h_con[r][c] == -1:
+        right = assignment.get((r, c + 1))
+        if right is not None:
+            domain = {v for v in domain if v > right}
+
+    # V-constraint: (r-1, c) < (r, c)  →  v > top
+    if r > 0 and puzzle.v_con[r - 1][c] == 1:
+        top = assignment.get((r - 1, c))
+        if top is not None:
+            domain = {v for v in domain if v > top}
+
+    # V-constraint: (r-1, c) > (r, c)  →  v < top
+    if r > 0 and puzzle.v_con[r - 1][c] == -1:
+        top = assignment.get((r - 1, c))
+        if top is not None:
+            domain = {v for v in domain if v < top}
+
+    # V-constraint: (r, c) < (r+1, c)  →  v < bot
+    if r < N - 1 and puzzle.v_con[r][c] == 1:
+        bot = assignment.get((r + 1, c))
+        if bot is not None:
+            domain = {v for v in domain if v < bot}
+
+    # V-constraint: (r, c) > (r+1, c)  →  v > bot
+    if r < N - 1 and puzzle.v_con[r][c] == -1:
+        bot = assignment.get((r + 1, c))
+        if bot is not None:
+            domain = {v for v in domain if v > bot}
+
+    return domain
+
+
+def compatible(puzzle, ri, ci, vi, rj, cj, vj):
+    """
+    Kiểm tra gán (ri,ci)=vi và (rj,cj)=vj có mâu thuẫn không.
+    Dùng trong AC-3 để kiểm tra từng cặp giá trị.
+    """
+    # Cùng hàng hoặc cùng cột → không được trùng giá trị
+    if (ri == rj or ci == cj) and vi == vj:
+        return False
+
+    # H-constraint giữa 2 ô liền nhau cùng hàng
+    if ri == rj and abs(ci - cj) == 1:
+        c_left = min(ci, cj)
+        con = puzzle.h_con[ri][c_left]
+        v_left  = vi if ci == c_left else vj
+        v_right = vj if ci == c_left else vi
+        if con == 1  and not v_left < v_right:
+            return False
+        if con == -1 and not v_left > v_right:
+            return False
+
+    # V-constraint giữa 2 ô liền nhau cùng cột
+    if ci == cj and abs(ri - rj) == 1:
+        r_top = min(ri, rj)
+        con = puzzle.v_con[r_top][ci]
+        v_top = vi if ri == r_top else vj
+        v_bot = vj if ri == r_top else vi
+        if con == 1  and not v_top < v_bot:
+            return False
+        if con == -1 and not v_top > v_bot:
+            return False
+
+    return True
+
+
+def get_neighbors(puzzle, cell, assignment):
+    """
+    Trả về tất cả ô chưa gán có ràng buộc với cell:
+    cùng hàng, cùng cột, hoặc kề nhau có inequality.
+    """
+    r, c = cell
+    N = puzzle.N
+    neighbors = set()
+
+    for col in range(N):
+        if col != c and (r, col) not in assignment:
+            neighbors.add((r, col))
+    for row in range(N):
+        if row != r and (row, c) not in assignment:
+            neighbors.add((row, c))
+
+    return neighbors
