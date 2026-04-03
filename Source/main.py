@@ -10,7 +10,7 @@ Cach dung:
 Algorithm:
   fc    : Forward Chaining
   bt    : Backtracking
-  bc    : Backward Chaining  (chua implement)
+  bc    : Backward Chaining
   astar : A* Search
   cnf   : CNF Generator      (chua implement)
 
@@ -34,6 +34,7 @@ from pathlib import Path
 from futoshiki import parse_input, build_initial_assignment
 from forward_chain import solve_forward_chaining
 from backtracking import solve_backtracking
+from backward_chain import solve_backward_chaining
 from astar import solve_astar
 from display import (
     print_header,
@@ -55,7 +56,7 @@ ALGO_NAMES = {
     'cnf'  : 'CNF Generator',
 }
 
-NOT_IMPLEMENTED = {'bc', 'cnf'}
+NOT_IMPLEMENTED = {'cnf'}
 
 
 # ================================================================
@@ -115,6 +116,9 @@ def run_solver(puzzle, algorithm, heuristic='h2'):
 
     elif algorithm == 'bt':
         return solve_backtracking(puzzle)
+
+    elif algorithm == 'bc':
+        return solve_backward_chaining(puzzle)
 
     elif algorithm == 'astar':
         return solve_astar(puzzle, heuristic=heuristic)
@@ -205,7 +209,7 @@ def main():
 
     except NotImplementedError as e:
         print(f"\n  [Chua implement] {e}")
-        print("  Hay chay: fc, bt, hoac astar.\n")
+        print("  Hay chay: fc, bt, bc, hoac astar.\n")
         return 1
 
     except FileNotFoundError as e:
