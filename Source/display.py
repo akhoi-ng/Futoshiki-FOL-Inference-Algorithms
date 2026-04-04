@@ -87,19 +87,23 @@ def format_statistics(stats):
     lines.append("  " + "-" * 38)
 
     key_labels = {
-        'time'       : "Thoi gian",
-        'nodes'      : "Nodes explored",
-        'backtracks' : "Backtracks",
-        'inferences' : "Inferences made",
-        'iterations' : "FC Iterations",
-        'depth'      : "Solution depth",
-        'heuristic'  : "Heuristic",
+        'time'        : "Thoi gian",
+        'nodes'       : "Nodes explored",
+        'backtracks'  : "Backtracks",
+        'inferences'  : "Inferences made",
+        'iterations'  : "FC Iterations",
+        'depth'       : "Solution depth",
+        'heuristic'   : "Heuristic",
+        'cnf_vars'    : "CNF variables",
+        'cnf_clauses' : "CNF clauses",
+        'gen_time'    : "KB generation time",
+        'solve_time'  : "SAT solve time",
     }
 
     for key, label in key_labels.items():
         if key in stats:
             val = stats[key]
-            if key == 'time':
+            if key in ('time', 'gen_time', 'solve_time'):
                 lines.append(f"  {label:<20}: {val:.4f} giay")
             else:
                 lines.append(f"  {label:<20}: {val}")

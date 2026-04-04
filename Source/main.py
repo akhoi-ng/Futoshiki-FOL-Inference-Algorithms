@@ -36,6 +36,7 @@ from forward_chain import solve_forward_chaining
 from backtracking import solve_backtracking
 from backward_chain import solve_backward_chaining
 from astar import solve_astar
+from cnf_generator import solve_cnf_generator
 from display import (
     print_header,
     format_grid,
@@ -56,7 +57,7 @@ ALGO_NAMES = {
     'cnf'  : 'CNF Generator',
 }
 
-NOT_IMPLEMENTED = {'cnf'}
+NOT_IMPLEMENTED = {}
 
 
 # ================================================================
@@ -123,6 +124,9 @@ def run_solver(puzzle, algorithm, heuristic='h2'):
     elif algorithm == 'astar':
         return solve_astar(puzzle, heuristic=heuristic)
 
+    elif algorithm == 'cnf':
+        return solve_cnf_generator(puzzle)
+
     elif algorithm in NOT_IMPLEMENTED:
         raise NotImplementedError(
             f"'{ALGO_NAMES[algorithm]}' chua duoc implement."
@@ -178,7 +182,7 @@ def main():
 
         # Them thoi gian vao stats (do chinh xac hon tu main)
         if 'time' not in stats:
-            stats['time'] = end_time - start_time
+            stats['time'] = round(end_time - start_time, 4) # type: ignore
 
         # ── Ket qua ──
         if solution:
