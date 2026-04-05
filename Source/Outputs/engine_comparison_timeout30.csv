@@ -1,0 +1,13 @@
+input,algo,status,solved,time_s,nodes,mem_peak_kb,note
+input-01.txt,fc,ok,1,0.00084,12,14.9,
+input-01.txt,bt,ok,1,0.001958,13,35.22,
+input-01.txt,bc,ok,1,0.013229,12,282.68,
+input-01.txt,astar-h2,ok,1,0.004515,13,18.78,
+input-02.txt,fc,ok,1,0.003652,45,46.81,
+input-02.txt,bt,ok,1,0.013076,46,304.26,
+input-02.txt,bc,ok,1,0.155432,45,2584.5,
+input-02.txt,astar-h2,ok,1,0.063592,46,197.46,
+input-03.txt,fc,timeout,,30.0,,,> 30.0s
+input-03.txt,bt,timeout,,30.0,,,> 30.0s
+input-03.txt,bc,timeout,,30.0,,,> 30.0s
+input-03.txt,astar-h2,timeout,,30.0,,,> 30.0s
