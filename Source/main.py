@@ -119,7 +119,43 @@ def run_solver(puzzle, algorithm, heuristic='h2'):
         return solve_backtracking(puzzle)
 
     elif algorithm == 'bc':
-        return solve_backward_chaining(puzzle)
+        from backward_chain import BackwardChainingSolver
+        solver = BackwardChainingSolver(puzzle)
+        solution, stats = solver.solve()
+
+        # Demo Prolog-style query neu giai duoc
+        if solution:
+            print("\n  [BC] Prolog-style query — Val(i, j, ?) cho tung o:")
+            print("  " + "-" * 44)
+            N = solver.N
+            for r in range(N):
+                row_q = []
+                for c in range(N):
+                    vals = solver.query_cell_values(r + 1, c + 1, one_based=True)
+                    v = vals[0] if vals else "?"
+                    row_q.append(f"Val({r+1},{c+1},V)={v}")
+                print("  " + "   ".join(row_q))
+            print("  " + "-" * 44)
+
+            print("\n  [BC] Demo query yes/no:")
+            done = 0
+            for r in range(N):
+                for c in range(N):
+                    vals = solver.query_cell_values(r + 1, c + 1, one_based=True)
+                    if vals:
+                        v_true  = vals[0]
+                        v_false = (v_true % N) + 1
+                        res_t = solver.query_cell_is(r+1, c+1, v_true,  one_based=True)
+                        res_f = solver.query_cell_is(r+1, c+1, v_false, one_based=True)
+                        print(f"    ?- Val({r+1},{c+1},{v_true}).  ->  {'Yes' if res_t else 'No'}"
+                            f"   |   ?- Val({r+1},{c+1},{v_false}).  ->  {'Yes' if res_f else 'No'}")
+                        done += 1
+                    if done == 3:
+                        break
+                if done == 3:
+                    break
+
+        return solution, stats
 
     elif algorithm == 'astar':
         return solve_astar(puzzle, heuristic=heuristic)
