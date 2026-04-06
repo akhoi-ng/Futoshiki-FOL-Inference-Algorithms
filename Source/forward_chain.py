@@ -35,11 +35,13 @@ class KnowledgeBase:
     domains: dict {(r,c): set}    — cac gia tri con kha thi
     """
 
-    def __init__(self, puzzle, initial_assignment):
+    def __init__(self, puzzle, initial_assignment, step_callback=None):
         self.puzzle = puzzle
         self.N = puzzle.N
         self.facts = dict(initial_assignment)
         self.inferences_count = 0
+        self.step_callback = step_callback
+        self._step_count = 0
 
         # Khoi tao domains cho tat ca o trong
         self.domains = {}
@@ -150,6 +152,18 @@ class KnowledgeBase:
             del self.domains[(r, c)]
 
         self._propagate_single_fact(r, c, value)
+
+        # Notify GUI
+        if self.step_callback:
+            self._step_count += 1
+            self.step_callback({
+                'type': 'infer',
+                'message': f'[FC] Suy dien: ({r},{c}) = {value}',
+                'assignment': dict(self.facts),
+                'cell': (r, c),
+                'value': value,
+                'step_number': self._step_count,
+            })
         return True
 
     def is_complete(self):
@@ -295,7 +309,7 @@ def apply_hidden_single_rule(kb):
 # FORWARD CHAINING SOLVER CHINH
 # ================================================================
 
-def solve_forward_chaining(puzzle):
+def solve_forward_chaining(puzzle, step_callback=None):
     """
     Giai Futoshiki bang Forward Chaining.
 
@@ -308,7 +322,7 @@ def solve_forward_chaining(puzzle):
     stats phan biet ro FC vs BT de viet bao cao.
     """
     initial_assignment = build_initial_assignment(puzzle)
-    kb = KnowledgeBase(puzzle, initial_assignment)
+    kb = KnowledgeBase(puzzle, initial_assignment, step_callback=step_callback)
 
     iterations = 0
     max_iterations = 1000  # tranh loop vo han
@@ -336,6 +350,13 @@ def solve_forward_chaining(puzzle):
 
         # Fixpoint: khong suy duoc them gi → dung FC
         if new_facts == 0:
+            if step_callback:
+                step_callback({
+                    'type': 'info',
+                    'message': f'[FC] Fixpoint sau {iterations} iterations',
+                    'assignment': dict(kb.facts),
+                    'cell': None, 'value': None, 'step_number': 0,
+                })
             break
 
     # ── Ket qua FC ──
@@ -347,10 +368,17 @@ def solve_forward_chaining(puzzle):
             return None, _make_stats(iterations, kb, 0, 0, fc_solved=False)
 
     # ── Buoc 2: FC bi stuck → dung Backtracking hoan tat ──
-    # Tan dung facts va domains da thu hep boi FC
+    if step_callback:
+        step_callback({
+            'type': 'info',
+            'message': '[FC] Chuyen sang Backtracking ho tro...',
+            'assignment': dict(kb.facts),
+            'cell': None, 'value': None, 'step_number': 0,
+        })
+
     from backtracking import BacktrackingSolver
 
-    bt_solver = BacktrackingSolver(puzzle)
+    bt_solver = BacktrackingSolver(puzzle, step_callback=step_callback)
 
     # Dung lai facts tu FC lam diem bat dau cho BT
     partial = dict(kb.facts)
@@ -358,11 +386,9 @@ def solve_forward_chaining(puzzle):
     # Tinh lai domains tu partial assignment (da duoc thu hep boi FC)
     domains = {}
     for (r, c), domain in kb.domains.items():
-        # Dung domain da thu hep boi FC (khong tinh lai tu dau)
         if len(domain) > 0:
             domains[(r, c)] = domain.copy()
         else:
-            # Dead-end
             return None, _make_stats(iterations, kb, 0, 0, fc_solved=False)
 
     result = bt_solver.backtrack(partial, domains)

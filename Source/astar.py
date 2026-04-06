@@ -164,7 +164,7 @@ def _pick_cell_mrv(domains_cache):
 # A* SOLVER CHINH
 # ================================================================
 
-def astar_solve(puzzle, heuristic='h2'):
+def astar_solve(puzzle, heuristic='h2', step_callback=None):
     """
     Giai Futoshiki bang A* Search.
 
@@ -200,6 +200,7 @@ def astar_solve(puzzle, heuristic='h2'):
 
     visited = set()
     nodes_expanded = 0
+    step_count = 0
     start_time = time.time()
 
     while heap:
@@ -210,6 +211,18 @@ def astar_solve(puzzle, heuristic='h2'):
             continue
         visited.add(state_key)
         nodes_expanded += 1
+
+        # Notify GUI
+        if step_callback:
+            step_count += 1
+            step_callback({
+                'type': 'expand',
+                'message': f'[A*] Expand node #{nodes_expanded}, f={f}, g={g}, cells={len(assignment)}/{N*N}',
+                'assignment': dict(assignment),
+                'cell': None,
+                'value': None,
+                'step_number': step_count,
+            })
 
         # ── Goal check ──
         if len(assignment) == N * N:
@@ -276,9 +289,9 @@ def astar_solve(puzzle, heuristic='h2'):
 # PUBLIC INTERFACE — goi tu main.py
 # ================================================================
 
-def solve_astar(puzzle, heuristic='h2'):
+def solve_astar(puzzle, heuristic='h2', step_callback=None):
     """
     Wrapper tuong thich voi main.py.
     Tra ve (solution, stats) giong cac solver khac.
     """
-    return astar_solve(puzzle, heuristic=heuristic)
+    return astar_solve(puzzle, heuristic=heuristic, step_callback=step_callback)

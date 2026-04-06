@@ -152,7 +152,7 @@ class SLDResolver:
 class BackwardChainingSolver:
     """Solver BC theo SLD-resolution, kieu Prolog."""
 
-    def __init__(self, puzzle):
+    def __init__(self, puzzle, step_callback=None):
         self.puzzle = puzzle
         self.N = puzzle.N
         self.nodes_explored = 0
@@ -160,6 +160,8 @@ class BackwardChainingSolver:
         self.inferences = 0
         self.solution_state = None
         self.solution_assignment = None
+        self.step_callback = step_callback
+        self._step_count = 0
 
         self.rules = self._build_rules()
         self.resolver = SLDResolver(self.rules, self._build_builtins())
@@ -334,6 +336,18 @@ class BackwardChainingSolver:
         next_state = self._assignment_to_state(new_assignment)
         self.inferences += 1
 
+        # Notify GUI
+        if self.step_callback:
+            self._step_count += 1
+            self.step_callback({
+                'type': 'assign',
+                'message': f'[BC] Gan ({r_term},{c_term}) = {v_term}',
+                'assignment': dict(new_assignment),
+                'cell': (r_term, c_term),
+                'value': v_term,
+                'step_number': self._step_count,
+            })
+
         theta = self._unify_args(args, (state, r_term, c_term, v_term, next_state), subst)
         if theta is not None:
             yield theta
@@ -455,12 +469,12 @@ class BackwardChainingSolver:
         return False
 
 
-def solve_backward_chaining(puzzle):
+def solve_backward_chaining(puzzle, step_callback=None):
     """
     Public interface cho main.py.
     Tra ve (solution, stats).
     """
-    solver = BackwardChainingSolver(puzzle)
+    solver = BackwardChainingSolver(puzzle, step_callback=step_callback)
     return solver.solve()
 
 

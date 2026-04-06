@@ -21,11 +21,26 @@ from futoshiki import build_initial_assignment, compute_domain
 class BacktrackingSolver:
     """Solver su dung backtracking voi forward checking."""
 
-    def __init__(self, puzzle):
+    def __init__(self, puzzle, step_callback=None):
         self.puzzle = puzzle
         self.N = puzzle.N
         self.nodes_explored = 0
         self.backtracks = 0
+        self.step_callback = step_callback
+        self._step_count = 0
+
+    def _notify(self, step_type, message, assignment, cell=None, value=None):
+        """Goi callback neu co, bao cho GUI biet buoc hien tai."""
+        if self.step_callback:
+            self._step_count += 1
+            self.step_callback({
+                'type': step_type,
+                'message': message,
+                'assignment': dict(assignment),
+                'cell': cell,
+                'value': value,
+                'step_number': self._step_count,
+            })
 
     # ================================================================
     # DOMAIN MANAGEMENT
@@ -120,6 +135,7 @@ class BacktrackingSolver:
 
         # ── Base case: da dien het ──
         if len(assignment) == self.N * self.N:
+            self._notify('done', 'Tim thay loi giai!', assignment)
             return assignment  # forward_check da dam bao valid
 
         # ── Chon o tiep theo (MRV) ──
@@ -129,6 +145,7 @@ class BacktrackingSolver:
 
         # ── Thu tung gia tri trong domain ──
         for value in sorted(domains.get(var, set())):
+            self._notify('assign', f'Thu ({var[0]},{var[1]}) = {value}', assignment, var, value)
             assignment[var] = value
 
             # Forward checking thay the is_valid()
@@ -142,6 +159,7 @@ class BacktrackingSolver:
             # Backtrack
             del assignment[var]
             self.backtracks += 1
+            self._notify('backtrack', f'Backtrack ({var[0]},{var[1]}) = {value}', assignment, var, value)
 
         return None
 
@@ -171,10 +189,10 @@ class BacktrackingSolver:
 # PUBLIC INTERFACE — goi tu main.py
 # ================================================================
 
-def solve_backtracking(puzzle):
+def solve_backtracking(puzzle, step_callback=None):
     """
     Giai Futoshiki bang Backtracking.
     Tra ve (solution, stats) de tuong thich main.py.
     """
-    solver = BacktrackingSolver(puzzle)
+    solver = BacktrackingSolver(puzzle, step_callback=step_callback)
     return solver.solve()

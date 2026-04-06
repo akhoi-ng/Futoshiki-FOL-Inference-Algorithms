@@ -569,7 +569,7 @@ def solve_with_pysat(clauses, num_vars, N):
 # PUBLIC INTERFACE — goi tu main.py
 # ================================================================
 
-def solve_cnf_generator(puzzle):
+def solve_cnf_generator(puzzle, step_callback=None):
     """
     Entry point cho CNF solver — goi tu main.py.
 
@@ -588,11 +588,31 @@ def solve_cnf_generator(puzzle):
         stats:    dict chua thong ke de in ra man hinh
     """
     N = puzzle.N
+    step_count = 0
+
+    def _notify(msg):
+        nonlocal step_count
+        if step_callback:
+            step_count += 1
+            step_callback({
+                'type': 'info',
+                'message': msg,
+                'assignment': {},
+                'cell': None,
+                'value': None,
+                'step_number': step_count,
+            })
 
     # ── Buoc 1: Generate ground KB ──
+    _notify('[CNF] Bat dau sinh Knowledge Base...')
     start_gen = time.time()
     clauses, num_vars, clause_counts = generate_ground_kb(puzzle)
     gen_time = time.time() - start_gen
+
+    for axiom, count in clause_counts.items():
+        _notify(f'[CNF] {axiom.strip()}: {count} clauses')
+
+    _notify(f'[CNF] Tong: {num_vars} vars, {len(clauses)} clauses ({gen_time:.4f}s)')
 
     # ── Buoc 2: In thong ke ──
     print_cnf_stats(clauses, num_vars, clause_counts, N)
@@ -603,14 +623,30 @@ def solve_cnf_generator(puzzle):
     export_dimacs(clauses, num_vars, dimacs_path)
 
     # ── Buoc 4: Giai bang SAT solver ──
+    _notify('[CNF] Dang giai bang SAT solver (Glucose4)...')
     print(f"\n  Dang giai bang SAT solver (Glucose4)...")
     start_solve = time.time()
     solution = solve_with_pysat(clauses, num_vars, N)
     solve_time = time.time() - start_solve
 
+    if solution:
+        _notify(f'[CNF] SAT! Tim thay loi giai ({solve_time:.4f}s)')
+        if step_callback:
+            step_count += 1
+            step_callback({
+                'type': 'done',
+                'message': '[CNF] Tim thay loi giai!',
+                'assignment': dict(solution),
+                'cell': None,
+                'value': None,
+                'step_number': step_count,
+            })
+    else:
+        _notify(f'[CNF] UNSAT - khong co loi giai ({solve_time:.4f}s)')
+
     # ── Buoc 5: Tao stats dict ──
     stats = {
-        'nodes'       : len(clauses),       # so clause = "nodes" cho thong ke
+        'nodes'       : len(clauses),
         'time'        : gen_time + solve_time,
         'cnf_vars'    : num_vars,
         'cnf_clauses' : len(clauses),

@@ -107,20 +107,20 @@ Vi du:
 # SOLVER DISPATCHER
 # ================================================================
 
-def run_solver(puzzle, algorithm, heuristic='h2'):
+def run_solver(puzzle, algorithm, heuristic='h2', step_callback=None):
     """
     Chay thuat toan tuong ung va tra ve (solution, stats).
     Tat ca solver deu tra ve (solution, stats) de thong nhat.
     """
     if algorithm == 'fc':
-        return solve_forward_chaining(puzzle)
+        return solve_forward_chaining(puzzle, step_callback=step_callback)
 
     elif algorithm == 'bt':
-        return solve_backtracking(puzzle)
+        return solve_backtracking(puzzle, step_callback=step_callback)
 
     elif algorithm == 'bc':
         from backward_chain import BackwardChainingSolver
-        solver = BackwardChainingSolver(puzzle)
+        solver = BackwardChainingSolver(puzzle, step_callback=step_callback)
         solution, stats = solver.solve()
 
         # Demo Prolog-style query neu giai duoc
@@ -158,10 +158,10 @@ def run_solver(puzzle, algorithm, heuristic='h2'):
         return solution, stats
 
     elif algorithm == 'astar':
-        return solve_astar(puzzle, heuristic=heuristic)
+        return solve_astar(puzzle, heuristic=heuristic, step_callback=step_callback)
 
     elif algorithm == 'cnf':
-        return solve_cnf_generator(puzzle)
+        return solve_cnf_generator(puzzle, step_callback=step_callback)
 
     elif algorithm in NOT_IMPLEMENTED:
         raise NotImplementedError(
@@ -268,4 +268,10 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    # Neu khong co tham so command line -> chay GUI
+    if len(sys.argv) <= 1:
+        from gui import FutoshikiApp
+        app = FutoshikiApp()
+        app.mainloop()
+    else:
+        sys.exit(main())
