@@ -20,6 +20,7 @@ Fix so voi phien ban cu:
   - stats ghi ro FC inferences vs BT nodes (cho bao cao)
 """
 
+from collections import deque
 from futoshiki import build_initial_assignment, compute_domain
 
 
@@ -62,6 +63,7 @@ class KnowledgeBase:
         """
         Khi biet o (r,c) = value, cap nhat domains cua
         cac o bi anh huong (cung hang, cung cot, ke nhau co constraint).
+        Su dung queue-based propagation de xu ly inequality chains.
         Tuong ung voi viec ap dung Axiom A3, A6, A4, A7, A8, A9.
         """
         # Loai 'value' khoi cac o cung hang (A3)
@@ -74,68 +76,87 @@ class KnowledgeBase:
             if (row, c) in self.domains:
                 self.domains[(row, c)].discard(value)
 
-        # Ap dung inequality constraints tu o nay (A4, A7, A8, A9)
-        self._apply_inequality_from(r, c, value)
+        # Inequality chain propagation (A4, A7, A8, A9)
+        # Dung queue de lan truyen rang buoc qua chuoi bat dang thuc
+        # Vd: A < B < C, khi biet A=1, B phai > 1, C phai > min(B_domain)
+        queue = deque([(r, c)])
+        visited = set()
+        while queue:
+            cr, cc = queue.popleft()
+            if (cr, cc) in visited:
+                continue
+            visited.add((cr, cc))
+            changed = self._propagate_inequality_bounds(cr, cc)
+            for cell in changed:
+                if cell not in visited:
+                    queue.append(cell)
 
-    def _apply_inequality_from(self, r, c, value):
-        """Thu hep domains cac o ke nhau co inequality constraint."""
+    def _propagate_inequality_bounds(self, r, c):
+        """
+        Thu hep domains cac o ke co inequality constraint voi (r, c).
+        Xu ly ca cell da gan (dung gia tri chinh xac) va chua gan (dung min/max domain).
+        Tra ve danh sach cac cell co domain thay doi.
+
+        Arc consistency: voi constraint A < B:
+          - moi gia tri b trong domain(B) can co it nhat 1 a trong domain(A) sao cho a < b
+          - => b > min(domain(A))
+          - tuong tu a < max(domain(B))
+        """
         N = self.N
+        changed = []
 
-        # (r,c) < (r,c+1)  =>  (r,c+1) phai > value
+        # Xac dinh bound cua cell hien tai
+        if (r, c) in self.facts:
+            lo = hi = self.facts[(r, c)]
+        elif (r, c) in self.domains and self.domains[(r, c)]:
+            lo = min(self.domains[(r, c)])
+            hi = max(self.domains[(r, c)])
+        else:
+            return changed
+
+        def _filter(nr, nc, predicate):
+            """Loc domain cua o (nr, nc), ghi nhan neu thay doi."""
+            if (nr, nc) in self.domains:
+                old_size = len(self.domains[(nr, nc)])
+                self.domains[(nr, nc)] = {
+                    v for v in self.domains[(nr, nc)] if predicate(v)
+                }
+                if len(self.domains[(nr, nc)]) < old_size:
+                    changed.append((nr, nc))
+
+        # (r,c) < (r,c+1) => neighbor phai > lo
         if c < N - 1 and self.puzzle.h_con[r][c] == 1:
-            if (r, c + 1) in self.domains:
-                self.domains[(r, c + 1)] = {
-                    v for v in self.domains[(r, c + 1)] if v > value
-                }
+            _filter(r, c + 1, lambda v: v > lo)
 
-        # (r,c) > (r,c+1)  =>  (r,c+1) phai < value
+        # (r,c) > (r,c+1) => neighbor phai < hi
         if c < N - 1 and self.puzzle.h_con[r][c] == -1:
-            if (r, c + 1) in self.domains:
-                self.domains[(r, c + 1)] = {
-                    v for v in self.domains[(r, c + 1)] if v < value
-                }
+            _filter(r, c + 1, lambda v: v < hi)
 
-        # (r,c-1) < (r,c)  =>  (r,c-1) phai < value
+        # (r,c-1) < (r,c) => neighbor (trai) phai < hi
         if c > 0 and self.puzzle.h_con[r][c - 1] == 1:
-            if (r, c - 1) in self.domains:
-                self.domains[(r, c - 1)] = {
-                    v for v in self.domains[(r, c - 1)] if v < value
-                }
+            _filter(r, c - 1, lambda v: v < hi)
 
-        # (r,c-1) > (r,c)  =>  (r,c-1) phai > value
+        # (r,c-1) > (r,c) => neighbor (trai) phai > lo
         if c > 0 and self.puzzle.h_con[r][c - 1] == -1:
-            if (r, c - 1) in self.domains:
-                self.domains[(r, c - 1)] = {
-                    v for v in self.domains[(r, c - 1)] if v > value
-                }
+            _filter(r, c - 1, lambda v: v > lo)
 
-        # (r,c) < (r+1,c)  =>  (r+1,c) phai > value
+        # (r,c) < (r+1,c) => neighbor (duoi) phai > lo
         if r < N - 1 and self.puzzle.v_con[r][c] == 1:
-            if (r + 1, c) in self.domains:
-                self.domains[(r + 1, c)] = {
-                    v for v in self.domains[(r + 1, c)] if v > value
-                }
+            _filter(r + 1, c, lambda v: v > lo)
 
-        # (r,c) > (r+1,c)  =>  (r+1,c) phai < value
+        # (r,c) > (r+1,c) => neighbor (duoi) phai < hi
         if r < N - 1 and self.puzzle.v_con[r][c] == -1:
-            if (r + 1, c) in self.domains:
-                self.domains[(r + 1, c)] = {
-                    v for v in self.domains[(r + 1, c)] if v < value
-                }
+            _filter(r + 1, c, lambda v: v < hi)
 
-        # (r-1,c) < (r,c)  =>  (r-1,c) phai < value
+        # (r-1,c) < (r,c) => neighbor (tren) phai < hi
         if r > 0 and self.puzzle.v_con[r - 1][c] == 1:
-            if (r - 1, c) in self.domains:
-                self.domains[(r - 1, c)] = {
-                    v for v in self.domains[(r - 1, c)] if v < value
-                }
+            _filter(r - 1, c, lambda v: v < hi)
 
-        # (r-1,c) > (r,c)  =>  (r-1,c) phai > value
+        # (r-1,c) > (r,c) => neighbor (tren) phai > lo
         if r > 0 and self.puzzle.v_con[r - 1][c] == -1:
-            if (r - 1, c) in self.domains:
-                self.domains[(r - 1, c)] = {
-                    v for v in self.domains[(r - 1, c)] if v > value
-                }
+            _filter(r - 1, c, lambda v: v > lo)
+
+        return changed
 
     def add_fact(self, r, c, value):
         """
@@ -185,21 +206,31 @@ def apply_singleton_domain_rule(kb):
     """
     Rule: neu domain cua o chi con 1 gia tri → gan ngay.
     Tuong ung: A1 (moi o co it nhat 1 gia tri) + A2 (nhieu nhat 1).
+    Thu thap tat ca singletons moi vong de giam so lan quet.
     """
     count = 0
     changed = True
 
     while changed:
         changed = False
-        for (r, c), domain in list(kb.domains.items()):
-            if len(domain) == 1:
-                value = next(iter(domain))
+
+        # Kiem tra empty domain truoc
+        if any(len(d) == 0 for d in kb.domains.values()):
+            return count  # Dead-end
+
+        # Thu thap tat ca singletons hien tai
+        singletons = [
+            ((r, c), next(iter(d)))
+            for (r, c), d in list(kb.domains.items())
+            if len(d) == 1
+        ]
+
+        for (r, c), value in singletons:
+            # Kiem tra lai — add_fact truoc do co the da thay doi domain
+            if (r, c) in kb.domains and len(kb.domains[(r, c)]) == 1:
                 if kb.add_fact(r, c, value):
                     count += 1
                     changed = True
-                    break  # restart vi domains da thay doi
-            elif len(domain) == 0:
-                return count  # Dead-end
 
     return count
 
@@ -260,9 +291,11 @@ def apply_hidden_single_rule(kb):
     Rule: neu trong hang/cot chi co 1 o co the nhan gia tri v → gan v.
     Tuong ung A3 + A6 ket hop: neu moi gia tri phai xuat hien dung 1 lan,
     o nao la duy nhat co the chua v thi buoc phai la v.
+    Thu thap tat ca hidden singles 1 lan, add batch de giam so lan quet O(N^3).
     """
     count = 0
     N = kb.N
+    to_add = []
 
     # Kiem tra theo hang
     for r in range(N):
@@ -279,10 +312,7 @@ def apply_hidden_single_rule(kb):
             ]
 
             if len(possible) == 1:
-                er, ec = possible[0]
-                if kb.add_fact(er, ec, value):
-                    count += 1
-                    return count  # restart vong lap ngoai
+                to_add.append((possible[0][0], possible[0][1], value))
 
     # Kiem tra theo cot
     for c in range(N):
@@ -297,10 +327,18 @@ def apply_hidden_single_rule(kb):
             ]
 
             if len(possible) == 1:
-                er, ec = possible[0]
-                if kb.add_fact(er, ec, value):
-                    count += 1
-                    return count
+                to_add.append((possible[0][0], possible[0][1], value))
+
+    # Add tat ca, kiem tra lai validity sau moi add_fact
+    # (vi add_fact goi propagation, co the lam thay doi domains cua cac o khac)
+    seen = set()
+    for r, c, v in to_add:
+        if (r, c) in seen or (r, c) in kb.facts:
+            continue
+        if (r, c) in kb.domains and v in kb.domains[(r, c)]:
+            if kb.add_fact(r, c, v):
+                count += 1
+                seen.add((r, c))
 
     return count
 

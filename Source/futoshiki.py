@@ -104,11 +104,15 @@ def build_initial_assignment(puzzle):
 # UTILITY FUNCTIONS — dùng chung cho FC, BC, A*
 # ================================================================
 
-def compute_domain(puzzle, assignment, r, c):
+def compute_domain(puzzle, assignment, r, c, domains=None):
     """
     Tính tập giá trị còn hợp lệ cho ô (r, c)
     dựa trên assignment hiện tại.
     Áp dụng: row/col uniqueness + inequality constraints.
+
+    Nếu domains (dict {(r,c): set}) được cung cấp, sử dụng
+    min/max của domain ô kề chưa gán để bound pruning chính xác hơn
+    (arc-consistent bound estimation) thay vì chỉ loại cực trị.
     """
     N = puzzle.N
 
@@ -122,48 +126,80 @@ def compute_domain(puzzle, assignment, r, c):
         left = assignment.get((r, c - 1))
         if left is not None:
             domain = {v for v in domain if v > left}
+        elif domains and (r, c - 1) in domains and domains[(r, c - 1)]:
+            domain = {v for v in domain if v > min(domains[(r, c - 1)])}
+        else:
+            domain.discard(1)   # phải > ô trái → không thể là 1
 
     # H-constraint: (r, c-1) > (r, c)  →  v < left
     if c > 0 and puzzle.h_con[r][c - 1] == -1:
         left = assignment.get((r, c - 1))
         if left is not None:
             domain = {v for v in domain if v < left}
+        elif domains and (r, c - 1) in domains and domains[(r, c - 1)]:
+            domain = {v for v in domain if v < max(domains[(r, c - 1)])}
+        else:
+            domain.discard(N)   # phải < ô trái → không thể là N
 
     # H-constraint: (r, c) < (r, c+1)  →  v < right
     if c < N - 1 and puzzle.h_con[r][c] == 1:
         right = assignment.get((r, c + 1))
         if right is not None:
             domain = {v for v in domain if v < right}
+        elif domains and (r, c + 1) in domains and domains[(r, c + 1)]:
+            domain = {v for v in domain if v < max(domains[(r, c + 1)])}
+        else:
+            domain.discard(N)   # phải < ô phải → không thể là N
 
     # H-constraint: (r, c) > (r, c+1)  →  v > right
     if c < N - 1 and puzzle.h_con[r][c] == -1:
         right = assignment.get((r, c + 1))
         if right is not None:
             domain = {v for v in domain if v > right}
+        elif domains and (r, c + 1) in domains and domains[(r, c + 1)]:
+            domain = {v for v in domain if v > min(domains[(r, c + 1)])}
+        else:
+            domain.discard(1)   # phải > ô phải → không thể là 1
 
     # V-constraint: (r-1, c) < (r, c)  →  v > top
     if r > 0 and puzzle.v_con[r - 1][c] == 1:
         top = assignment.get((r - 1, c))
         if top is not None:
             domain = {v for v in domain if v > top}
+        elif domains and (r - 1, c) in domains and domains[(r - 1, c)]:
+            domain = {v for v in domain if v > min(domains[(r - 1, c)])}
+        else:
+            domain.discard(1)   # phải > ô trên → không thể là 1
 
     # V-constraint: (r-1, c) > (r, c)  →  v < top
     if r > 0 and puzzle.v_con[r - 1][c] == -1:
         top = assignment.get((r - 1, c))
         if top is not None:
             domain = {v for v in domain if v < top}
+        elif domains and (r - 1, c) in domains and domains[(r - 1, c)]:
+            domain = {v for v in domain if v < max(domains[(r - 1, c)])}
+        else:
+            domain.discard(N)   # phải < ô trên → không thể là N
 
     # V-constraint: (r, c) < (r+1, c)  →  v < bot
     if r < N - 1 and puzzle.v_con[r][c] == 1:
         bot = assignment.get((r + 1, c))
         if bot is not None:
             domain = {v for v in domain if v < bot}
+        elif domains and (r + 1, c) in domains and domains[(r + 1, c)]:
+            domain = {v for v in domain if v < max(domains[(r + 1, c)])}
+        else:
+            domain.discard(N)   # phải < ô dưới → không thể là N
 
     # V-constraint: (r, c) > (r+1, c)  →  v > bot
     if r < N - 1 and puzzle.v_con[r][c] == -1:
         bot = assignment.get((r + 1, c))
         if bot is not None:
             domain = {v for v in domain if v > bot}
+        elif domains and (r + 1, c) in domains and domains[(r + 1, c)]:
+            domain = {v for v in domain if v > min(domains[(r + 1, c)])}
+        else:
+            domain.discard(1)   # phải > ô dưới → không thể là 1
 
     return domain
 
