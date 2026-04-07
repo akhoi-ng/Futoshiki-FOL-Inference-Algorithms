@@ -195,6 +195,8 @@ class FutoshikiApp(ctk.CTk):
         self.puzzle = None
         self.solver_thread = None
         self.stop_event = threading.Event()
+        self.pause_event = threading.Event()
+        self.pause_event.set()
         self.step_queue = queue.Queue()
         self.step_delay_ms = 50
         self.use_delay = tk.BooleanVar(value=True)
@@ -291,11 +293,20 @@ class FutoshikiApp(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"), height=38)
         self.solve_btn.pack(fill="x", padx=12, pady=(8, 4))
 
+        action_row = ctk.CTkFrame(sec3, fg_color='transparent')
+        action_row.pack(fill="x", padx=12, pady=4)
+
+        self.pause_btn = ctk.CTkButton(
+            action_row, text="\u23f8 TẠM DỪNG", command=self._toggle_pause,
+            fg_color=C['warning'], hover_color='#e6b973', text_color='#1a1b26',
+            font=ctk.CTkFont(size=11, weight="bold"), height=32, state="disabled", width=105)
+        self.pause_btn.pack(side="left", fill="x", expand=True, padx=(0, 4))
+
         self.stop_btn = ctk.CTkButton(
-            sec3, text="\u23F9  DỪNG", command=self._stop_solving,
+            action_row, text="\u23F9 DỪNG HẲN", command=self._stop_solving,
             fg_color=C['error'], hover_color='#d45a6e',
-            font=ctk.CTkFont(size=13, weight="bold"), height=38, state="disabled")
-        self.stop_btn.pack(fill="x", padx=12, pady=4)
+            font=ctk.CTkFont(size=11, weight="bold"), height=32, state="disabled", width=105)
+        self.stop_btn.pack(side="right", fill="x", expand=True, padx=(4, 0))
 
         self.delay_sw = ctk.CTkSwitch(
             sec3, text="Hiển thị từng bước", variable=self.use_delay,
@@ -449,6 +460,7 @@ class FutoshikiApp(ctk.CTk):
 
         self.solving = True
         self.stop_event.clear()
+        self.pause_event.set()
         self.step_count = 0
         self.step_queue = queue.Queue()
         self._pending_steps = []
@@ -457,6 +469,7 @@ class FutoshikiApp(ctk.CTk):
         self._reset_stats()
         self.grid_sol.clear_solution()
         self.solve_btn.configure(state="disabled")
+        self.pause_btn.configure(state="normal", text="\u23f8 TẠM DỪNG", text_color='#1a1b26')
         self.stop_btn.configure(state="normal")
         self.stat_lbls['status'].configure(text="Đang giải...", text_color=C['warning'])
 
@@ -488,8 +501,29 @@ class FutoshikiApp(ctk.CTk):
         self.solver_thread.start()
         self._poll()
 
+    def _toggle_pause(self):
+        if self.pause_event.is_set():
+            # Hiện đang chạy -> Tạm dừng
+            self.pause_event.clear()
+            self.pause_btn.configure(text="\u25b6 TIẾP TỤC", text_color=C['text'])
+            self._log("\u23f8 Đã tạm dừng. Bấm Tiếp tục để chạy tiếp.", C['warning'])
+            self.stat_lbls['status'].configure(text="\u23f8 Tạm dừng", text_color=C['warning'])
+        else:
+            # Hiện đang dừng -> Tiếp tục
+            self.pause_event.set()
+            self.pause_btn.configure(text="\u23f8 TẠM DỪNG", text_color='#1a1b26')
+            self._log("\u25b6 Đang tiếp tục...", C['success'])
+            self.stat_lbls['status'].configure(text="Đang giải...", text_color=C['warning'])
+
     def _stop_solving(self):
         self.stop_event.set()
+        self.pause_event.set()  # Phải báo unpause để thread có thể chạy nốt lệnh throw exception
+        
+        # Xoá toàn bộ các bước đang chờ hiển thị để GUI lập tức dừng lại
+        self._pending_steps.clear()
+        with self.step_queue.mutex:
+            self.step_queue.queue.clear()
+            
         self._log("\u23f9 Đang dừng...", C['warning'])
 
     # ────────────────────────────────────────────────────────────
@@ -507,6 +541,7 @@ class FutoshikiApp(ctk.CTk):
         last_info = [None]  # keep last skipped step
 
         def cb(info):
+            self.pause_event.wait()
             step_counter[0] += 1
             # Always send: result-like, info, done types
             if info.get('type') in ('info', 'done', 'result'):
@@ -642,6 +677,7 @@ class FutoshikiApp(ctk.CTk):
             self.stat_lbls['status'].configure(text="\u274c Không có lời giải", text_color=C['error'])
         self._update_stats(stats)
         self.solve_btn.configure(state="normal")
+        self.pause_btn.configure(state="disabled", text="\u23f8 TẠM DỪNG")
         self.stop_btn.configure(state="disabled")
 
     def _on_stopped(self):
@@ -649,6 +685,7 @@ class FutoshikiApp(ctk.CTk):
         self._log("\n\u23f9 Đã dừng.", C['warning'])
         self.stat_lbls['status'].configure(text="\u23f9 Đã dừng", text_color=C['warning'])
         self.solve_btn.configure(state="normal")
+        self.pause_btn.configure(state="disabled", text="\u23f8 TẠM DỪNG")
         self.stop_btn.configure(state="disabled")
 
     def _on_error(self, s):
@@ -659,6 +696,7 @@ class FutoshikiApp(ctk.CTk):
             self._log(tb, C['text_dim'])
         self.stat_lbls['status'].configure(text="\u274c Lỗi", text_color=C['error'])
         self.solve_btn.configure(state="normal")
+        self.pause_btn.configure(state="disabled", text="\u23f8 TẠM DỪNG")
         self.stop_btn.configure(state="disabled")
 
     # ────────────────────────────────────────────────────────────
