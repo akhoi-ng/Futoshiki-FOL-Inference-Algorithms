@@ -185,6 +185,10 @@ class FutoshikiApp(ctk.CTk):
         self.title("\U0001f9e9 Futoshiki Solver")
         self.geometry("1260x800")
         self.minsize(1060, 680)
+        
+        # Maximize window on startup (zoomed for Windows)
+        self.after(0, lambda: self.state('zoomed'))
+        
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
@@ -260,19 +264,21 @@ class FutoshikiApp(ctk.CTk):
                                fg_color=C['primary'], hover_color=C['primary']
                                ).pack(padx=16, pady=2, anchor="w")
 
-        # Heuristic submenu
-        self.h_frame = ctk.CTkFrame(sec2, fg_color='transparent')
-        ctk.CTkLabel(self.h_frame, text="Heuristic:", font=ctk.CTkFont(size=10),
-                     text_color=C['text_dim']).pack(side="left", padx=(0, 4))
+        # Heuristic submenu — always present, visibility toggled
+        self.h_frame = ctk.CTkFrame(sec2, fg_color='transparent', height=30)
+        self.h_frame.pack(fill="x", padx=28, pady=(0, 4))
+        self.h_frame.pack_propagate(False)
+        self.h_label_w = ctk.CTkLabel(self.h_frame, text="Heuristic:",
+                                       font=ctk.CTkFont(size=10),
+                                       text_color=C['text_dim'])
         self.h_var = tk.StringVar(value="h2")
         self.h_menu = ctk.CTkOptionMenu(
             self.h_frame, variable=self.h_var,
-            values=[f"{l}" for l, _ in HEURISTIC_OPTIONS],
-            width=150, height=26, font=ctk.CTkFont(size=10),
+            values=[l for l, _ in HEURISTIC_OPTIONS],
+            width=140, height=24, font=ctk.CTkFont(size=10),
             fg_color=C['surface2'], button_color=C['border'],
             command=self._on_heuristic_change)
-        self.h_menu.pack(side="left")
-        # hidden by default
+        # Hidden by default (not A*) — children not packed
         ctk.CTkLabel(sec2, text="").pack(pady=1)
 
         # ── Actions ──
@@ -301,7 +307,7 @@ class FutoshikiApp(ctk.CTk):
         spd.pack(fill="x", padx=12, pady=(0, 8))
         ctk.CTkLabel(spd, text="Tốc độ:", font=ctk.CTkFont(size=10),
                      text_color=C['text_dim']).pack(side="left")
-        self.speed_sl = ctk.CTkSlider(spd, from_=10, to=500, number_of_steps=49,
+        self.speed_sl = ctk.CTkSlider(spd, from_=0, to=500, number_of_steps=50,
                                        width=110, fg_color=C['border'],
                                        progress_color=C['primary'],
                                        command=self._on_speed)
@@ -394,9 +400,11 @@ class FutoshikiApp(ctk.CTk):
 
     def _on_algo_change(self):
         if self.algo_var.get() == 'astar':
-            self.h_frame.pack(fill="x", padx=28, pady=(0, 4))
+            self.h_label_w.pack(side="left", padx=(0, 4))
+            self.h_menu.pack(side="left")
         else:
-            self.h_frame.pack_forget()
+            self.h_label_w.pack_forget()
+            self.h_menu.pack_forget()
 
     def _on_heuristic_change(self, val):
         for label, key in HEURISTIC_OPTIONS:
@@ -491,8 +499,28 @@ class FutoshikiApp(ctk.CTk):
     def _solver_run(self, puzzle, algo, heuristic):
         import tracemalloc as tm
 
+        # Smart throttle: skip GUI updates for fast solvers on big puzzles
+        # Only send every Nth step to keep GUI responsive
+        N = puzzle.N
+        throttle = max(1, (N * N) // 4)  # e.g. N=4->4, N=9->20
+        step_counter = [0]  # mutable for closure
+        last_info = [None]  # keep last skipped step
+
         def cb(info):
-            self.step_queue.put(info)
+            step_counter[0] += 1
+            # Always send: result-like, info, done types
+            if info.get('type') in ('info', 'done', 'result'):
+                # Flush any skipped step first
+                if last_info[0] is not None:
+                    self.step_queue.put(last_info[0])
+                    last_info[0] = None
+                self.step_queue.put(info)
+            elif step_counter[0] % throttle == 0:
+                self.step_queue.put(info)
+                last_info[0] = None
+            else:
+                last_info[0] = info  # store for potential flush
+
             if self.stop_event.is_set():
                 raise StopSolverException()
 
@@ -508,6 +536,9 @@ class FutoshikiApp(ctk.CTk):
             if 'time' not in stats:
                 stats['time'] = round(elapsed, 4)
             stats['memory_kb'] = round(peak / 1024, 2)
+            # Flush last skipped step
+            if last_info[0] is not None:
+                self.step_queue.put(last_info[0])
             self.step_queue.put({'type': 'result', 'solution': solution, 'stats': stats})
         except StopSolverException:
             try: tm.stop()
@@ -531,49 +562,72 @@ class FutoshikiApp(ctk.CTk):
         except queue.Empty:
             pass
 
-        if self._pending_steps:
-            step = self._pending_steps.pop(0)
-            self._process(step)
+        if not self._pending_steps:
+            if self.solving:
+                self.after(15, self._poll)
+            return
 
-            # If step-by-step mode with delay, schedule next poll after delay
-            if self.solving and self.use_delay.get() and self._pending_steps:
-                self.after(self.step_delay_ms, self._poll)
+        # Handle batch rendering for high speeds
+        batch_size = 1
+        if self.step_delay_ms == 0:
+            batch_size = 100
+        elif self.step_delay_ms <= 5:
+            batch_size = 20
+        elif self.step_delay_ms <= 10:
+            batch_size = 5
+
+        processed = 0
+        draw_assign = None
+        draw_cell = None
+        draw_hi = None
+        need_draw = False
+        log_buffer = []
+
+        while self._pending_steps and processed < batch_size:
+            step = self._pending_steps.pop(0)
+            t = step.get('type', '')
+            
+            # Done / Stopped / Error immediately abort the batch
+            if t in ('result', 'stopped', 'error'):
+                if log_buffer:
+                    self._log("\n".join(log_buffer))
+                if need_draw and self.use_delay.get():
+                    self.grid_sol.update_state(draw_assign, hi_cell=draw_cell, hi_color=draw_hi)
+                if t == 'result': self._on_done(step)
+                elif t == 'stopped': self._on_stopped()
+                elif t == 'error': self._on_error(step)
                 return
+
+            self.step_count += 1
+            msg = step.get('message', '')
+            icons = {'assign': '\U0001f7e2', 'backtrack': '\U0001f534',
+                     'infer': '\U0001f535', 'prune': '\U0001f7e1',
+                     'expand': '\U0001f537', 'info': '\u2139\ufe0f', 'done': '\u2705'}
+            icon = icons.get(t, '\u2022')
+            log_buffer.append(f"  {icon} Step {self.step_count}: {msg}")
+
+            if t in ('backtrack',): draw_hi = 'backtrack'
+            elif t in ('assign', 'infer'): draw_hi = 'assign'
+            else: draw_hi = None
+
+            draw_assign = step.get('assignment', {})
+            draw_cell = step.get('cell')
+            need_draw = True
+            processed += 1
+
+        if log_buffer:
+            self._log("\n".join(log_buffer))
+            
+        if need_draw and self.use_delay.get():
+            self.grid_sol.update_state(draw_assign, hi_cell=draw_cell, hi_color=draw_hi)
+
+        if self.solving and self.use_delay.get() and self._pending_steps:
+            delay = max(1, self.step_delay_ms)
+            self.after(delay, self._poll)
+            return
 
         if self.solving:
             self.after(15, self._poll)
-
-    def _process(self, s):
-        t = s.get('type', '')
-        if t == 'result':
-            self._on_done(s)
-            return
-        if t == 'stopped':
-            self._on_stopped()
-            return
-        if t == 'error':
-            self._on_error(s)
-            return
-
-        self.step_count += 1
-        msg = s.get('message', '')
-        assign = s.get('assignment', {})
-        cell = s.get('cell')
-
-        icons = {'assign': '\U0001f7e2', 'backtrack': '\U0001f534',
-                 'infer': '\U0001f535', 'prune': '\U0001f7e1',
-                 'expand': '\U0001f537', 'info': '\u2139\ufe0f', 'done': '\u2705'}
-        icon = icons.get(t, '\u2022')
-        self._log(f"  {icon} Step {self.step_count}: {msg}")
-
-        hi = None
-        if t in ('backtrack',):
-            hi = 'backtrack'
-        elif t in ('assign', 'infer'):
-            hi = 'assign'
-
-        if self.use_delay.get():
-            self.grid_sol.update_state(assign, hi_cell=cell, hi_color=hi)
 
     def _on_done(self, s):
         self.solving = False
