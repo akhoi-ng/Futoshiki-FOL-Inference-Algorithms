@@ -1,2 +1,5 @@
 python-sat
 customtkinter
+pandas 
+matplotlib 
+seaborn
