@@ -80,6 +80,11 @@ class FutoshikiCanvas(tk.Canvas):
         self.initial_assignment = {}
         self.hi_cell = None
         self.hi_color = None
+        
+        # Dictionaries to store Tkinter item IDs so we can update them without recreating
+        self._rect_ids = {}   
+        self._text_ids = {}
+        self._grid_drawn = False
 
     def set_puzzle(self, puzzle):
         self.puzzle = puzzle
@@ -88,6 +93,10 @@ class FutoshikiCanvas(tk.Canvas):
         N = puzzle.N
         w = N * self._cs + (N - 1) * self._cg + 2 * self._pad
         self.configure(width=w, height=w)
+        
+        # Create all canvas items ONCE
+        self._create_grid_items()
+        
         self.draw()
 
     def update_state(self, assignment, hi_cell=None, hi_color=None):
@@ -112,47 +121,30 @@ class FutoshikiCanvas(tk.Canvas):
                x2-r,y2, x1+r,y2, x1,y2, x1,y2-r, x1,y1+r, x1,y1]
         return self.create_polygon(pts, smooth=True, **kw)
 
-    def draw(self):
+    def _create_grid_items(self):
+        """Creates the permanent UI elements (rectangles, text shells, constraints) once."""
         self.delete("all")
+        self._rect_ids.clear()
+        self._text_ids.clear()
         if not self.puzzle:
             return
+            
         N = self.puzzle.N
-
         for r in range(N):
             for c in range(N):
                 x, y = self._xy(r, c)
-                is_hi = self.hi_cell == (r, c)
+                
+                # 1. Create Rectangle and store its ID
+                r_id = self._rounded_rect(x, y, x+self._cs, y+self._cs,
+                                          fill=C['cell_bg'], outline=C['border'], width=1)
+                self._rect_ids[(r, c)] = r_id
+                
+                # 2. Create Text Placeholder and store its ID (start empty)
+                t_id = self.create_text(x + self._cs/2, y + self._cs/2,
+                                        text="", font=('Segoe UI', 16, 'normal'), fill=C['secondary'])
+                self._text_ids[(r, c)] = t_id
 
-                if is_hi and self.hi_color == 'backtrack':
-                    bg, brd = '#3b2229', C['error']
-                elif is_hi and self.hi_color == 'assign':
-                    bg, brd = '#1a2e1a', C['success']
-                elif is_hi:
-                    bg, brd = '#283457', C['primary']
-                else:
-                    bg, brd = C['cell_bg'], C['border']
-
-                self._rounded_rect(x, y, x+self._cs, y+self._cs,
-                                   fill=bg, outline=brd,
-                                   width=2 if is_hi else 1)
-
-                if (r, c) in self.assignment:
-                    val = self.assignment[(r, c)]
-                    is_init = (r, c) in self.initial_assignment
-                    if is_hi and self.hi_color == 'backtrack':
-                        clr = C['error']
-                    elif is_hi and self.hi_color == 'assign':
-                        clr = C['success']
-                    elif is_init:
-                        clr = C['text']
-                    else:
-                        clr = C['secondary']
-                    fw = 'bold' if is_init else 'normal'
-                    self.create_text(x + self._cs/2, y + self._cs/2,
-                                     text=str(val),
-                                     font=('Segoe UI', 16, fw), fill=clr)
-
-                # Horizontal constraint
+                # 3. Draw static Constraints (we don't need to save IDs because they never change)
                 if c < N - 1:
                     con = self.puzzle.h_con[r][c]
                     if con != 0:
@@ -162,8 +154,6 @@ class FutoshikiCanvas(tk.Canvas):
                         self.create_text(cx, cy, text=sym,
                                          font=('Segoe UI', 13, 'bold'),
                                          fill=C['accent'])
-
-                # Vertical constraint
                 if r < N - 1:
                     con = self.puzzle.v_con[r][c]
                     if con != 0:
@@ -173,6 +163,55 @@ class FutoshikiCanvas(tk.Canvas):
                         self.create_text(cx, cy, text=sym,
                                          font=('Segoe UI', 11, 'bold'),
                                          fill=C['accent'])
+        self._grid_drawn = True
+
+    def draw(self):
+        """Updates the attributes of existing items instead of deleting/redrawing."""
+        if not self.puzzle or not self._grid_drawn:
+            return
+            
+        N = self.puzzle.N
+
+        for r in range(N):
+            for c in range(N):
+                is_hi = self.hi_cell == (r, c)
+
+                # --- 1. Update Rectangle Attributes ---
+                if is_hi and self.hi_color == 'backtrack':
+                    bg, brd = '#3b2229', C['error']
+                elif is_hi and self.hi_color == 'assign':
+                    bg, brd = '#1a2e1a', C['success']
+                elif is_hi:
+                    bg, brd = '#283457', C['primary']
+                else:
+                    bg, brd = C['cell_bg'], C['border']
+
+                self.itemconfig(self._rect_ids[(r, c)], fill=bg, outline=brd, 
+                                width=2 if is_hi else 1)
+
+                # --- 2. Update Text Attributes ---
+                val = self.assignment.get((r, c))
+                is_init = (r, c) in self.initial_assignment
+                
+                if val is None:
+                    # Clear cell if it has no assignment
+                    self.itemconfig(self._text_ids[(r, c)], text="")
+                else:
+                    if is_hi and self.hi_color == 'backtrack':
+                        clr = C['error']
+                    elif is_hi and self.hi_color == 'assign':
+                        clr = C['success']
+                    elif is_init:
+                        clr = C['text']
+                    else:
+                        clr = C['secondary']
+                        
+                    fw = 'bold' if is_init else 'normal'
+                    
+                    self.itemconfig(self._text_ids[(r, c)], 
+                                    text=str(val), 
+                                    fill=clr, 
+                                    font=('Segoe UI', 16, fw))
 
 
 # ================================================================
