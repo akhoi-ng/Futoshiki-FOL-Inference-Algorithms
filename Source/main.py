@@ -204,7 +204,7 @@ def main():
         if args.algorithm == 'astar':
             heuristic_desc = {
                 'h1': 'H1 - Trivial (dem o chua gan)',
-                'h2': 'H2 - Domain Wipeout',
+                'h2': 'H2 - Counting Inequality Chains',
                 'h3': 'H3 - AC-3',
             }
             print(f"\n  Heuristic: {heuristic_desc[args.heuristic]}")

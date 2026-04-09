@@ -13,105 +13,138 @@ import time
 from collections import deque
 from futoshiki import build_initial_assignment, compute_domain, compatible, get_neighbors
 
-
 # ================================================================
-# HEURISTIC 1 — Trivial
+# LỚP 1: INFERENCE (SUY DIỄN & LỌC DOMAIN)
 # ================================================================
 
-def h1_unassigned(puzzle, assignment):
+def get_filtered_domains(puzzle, assignment, apply_ac3=False):
     """
-    h(s) = so o chua duoc gan gia tri.
-
-    Admissible : luon dung vi can it nhat h buoc nua.
-    Do manh    : yeu — khong phan biet duoc state tot/xau.
-    Chi phi    : O(1)
-    """
-    return puzzle.N * puzzle.N - len(assignment)
-
-
-# ================================================================
-# HEURISTIC 2 — Domain Wipeout
-# ================================================================
-
-def h2_domain_wipeout(puzzle, assignment):
-    """
-    Voi moi o chua gan, tinh domain con lai.
-    Neu bat ky o nao domain rong → state vo nghiem → tra ve inf.
-    Nguoc lai → tra ve so o chua gan (giong H1 nhung co pruning).
-
-    Admissible : van tra ve so o chua gan <= h*,
-                 chi them inf khi chac chan sai.
-    Do manh    : trung binh — cat duoc dead-end ngay.
-    Chi phi    : O(N^2) moi lan goi.
+    Tính toán domain cho tất cả ô chưa gán.
+    Nếu apply_ac3 = True, chạy thêm thuật toán AC-3 để lọc sâu.
+    Trả về: domains_cache (dict) hoặc None (nếu phát hiện vô nghiệm).
     """
     N = puzzle.N
-    h = 0
-    for r in range(N):
-        for c in range(N):
-            if (r, c) not in assignment:
-                domain = compute_domain(puzzle, assignment, r, c)
-                if len(domain) == 0:
-                    return float('inf')  # Dead-end → prune
-                h += 1
-    return h
-
-
-# ================================================================
-# HEURISTIC 3 — AC-3
-# ================================================================
-
-def h3_ac3(puzzle, assignment):
-    """
-    Chay AC-3 (Arc Consistency 3) tren cac o chua gan.
-    AC-3 lan truyen nhieu vong cho den khi khong doi,
-    phat hien mau thuan sau hon H2.
-
-    Admissible : AC-3 chi loai gia tri chac chan sai → khong overestimate.
-    Do manh    : manh nhat — phat hien conflict chain.
-    Chi phi    : O(N^3) moi lan goi.
-
-    Return: tong kich thuoc domain con lai (cang nho → cang gan goal)
-            hoac inf neu phat hien wipeout.
-    """
-    N = puzzle.N
-
-    # Buoc 1: Khoi tao domains
-    domains = {}
+    domains_cache = {}
+    
+    # 1. Forward Checking cơ bản (Tính domain ban đầu)
     for r in range(N):
         for c in range(N):
             if (r, c) not in assignment:
                 dom = compute_domain(puzzle, assignment, r, c)
                 if len(dom) == 0:
-                    return float('inf')
-                domains[(r, c)] = dom
+                    return None  # Wipeout
+                domains_cache[(r, c)] = dom
 
-    if not domains:
-        return 0
+    # 2. MAC (Maintaining Arc Consistency) - Lọc sâu
+    if apply_ac3:
+        queue = deque()
+        for cell in domains_cache:
+            for neighbor in get_neighbors(puzzle, cell, assignment):
+                if neighbor in domains_cache:
+                    queue.append((cell, neighbor))
 
-    # Buoc 2: Tao queue cac arc
-    queue = deque()
-    for cell in domains:
-        for neighbor in get_neighbors(puzzle, cell, assignment):
-            if neighbor in domains:
-                queue.append((cell, neighbor))
+        while queue:
+            xi, xj = queue.popleft()
+            if xi not in domains_cache or xj not in domains_cache:
+                continue
+                
+            if _revise(puzzle, domains_cache, xi, xj):
+                if len(domains_cache[xi]) == 0:
+                    return None  # Wipeout sau khi lan truyền
+                for xk in get_neighbors(puzzle, xi, assignment):
+                    if xk != xj and xk in domains_cache:
+                        queue.append((xk, xi))
+                        
+    return domains_cache
 
-    # Buoc 3: Vong lap AC-3
-    while queue:
-        xi, xj = queue.popleft()
+# ================================================================
+# LỚP 2: HEURISTICS (HÀM ĐÁNH GIÁ)
+# ================================================================
 
-        if xi not in domains or xj not in domains:
-            continue
+def h1_unassigned(puzzle, assignment):
+    return puzzle.N * puzzle.N - len(assignment)
 
-        if _revise(puzzle, domains, xi, xj):
-            if len(domains[xi]) == 0:
-                return float('inf')  # Wipeout
 
-            for xk in get_neighbors(puzzle, xi, assignment):
-                if xk != xj and xk in domains:
-                    queue.append((xk, xi))
+def h2_inequality_chains(puzzle, assignment):
+    """
+    Gợi ý 2: Đếm số phép gán tối thiểu để hoàn thành các chuỗi bất đẳng thức.
+    """
+    # 1. Kế thừa sức mạnh Cắt tỉa (Pruning) của Domain Wipeout
+    # (Bắt buộc phải có để A* không bị bùng nổ không gian mẫu)
+    domains_cache = get_filtered_domains(puzzle, assignment, apply_ac3=False)
+    if domains_cache is None:
+        return float('inf')
 
-    # Buoc 4: Tinh heuristic value
-    return sum(len(d) for d in domains.values())
+    N = puzzle.N
+    visited_cells = set()
+    h_chains_cost = 0
+
+    # Hàm phụ trợ: Dùng BFS để tìm toàn bộ các ô trong cùng 1 chuỗi bất đẳng thức
+    def get_chain_component(start_r, start_c):
+        component = []
+        queue = deque([(start_r, start_c)])
+        visited_cells.add((start_r, start_c))
+
+        while queue:
+            r, c = queue.popleft()
+            component.append((r, c))
+
+            neighbors_with_constraints = []
+            # Kiểm tra Ngang Trái
+            if c > 0 and puzzle.h_con[r][c-1] != 0:
+                neighbors_with_constraints.append((r, c-1))
+            # Kiểm tra Ngang Phải
+            if c < N - 1 and puzzle.h_con[r][c] != 0:
+                neighbors_with_constraints.append((r, c+1))
+            # Kiểm tra Dọc Trên
+            if r > 0 and puzzle.v_con[r-1][c] != 0:
+                neighbors_with_constraints.append((r-1, c))
+            # Kiểm tra Dọc Dưới
+            if r < N - 1 and puzzle.v_con[r][c] != 0:
+                neighbors_with_constraints.append((r+1, c))
+
+            for nr, nc in neighbors_with_constraints:
+                if (nr, nc) not in visited_cells:
+                    visited_cells.add((nr, nc))
+                    queue.append((nr, nc))
+                    
+        return component
+
+    # 2. Quét toàn bộ bàn cờ để tìm các chuỗi
+    for r in range(N):
+        for c in range(N):
+            if (r, c) not in visited_cells:
+                # Kiểm tra xem ô này có dính dáng tới dấu <, > nào không
+                has_constraint = False
+                if c > 0 and puzzle.h_con[r][c-1] != 0: has_constraint = True
+                elif c < N - 1 and puzzle.h_con[r][c] != 0: has_constraint = True
+                elif r > 0 and puzzle.v_con[r-1][c] != 0: has_constraint = True
+                elif r < N - 1 and puzzle.v_con[r][c] != 0: has_constraint = True
+
+                if has_constraint:
+                    # Lấy ra toàn bộ chuỗi chứa ô này
+                    chain = get_chain_component(r, c)
+                    
+                    # Đếm số ô CÒN TRỐNG (chưa được gán) trong chuỗi này
+                    unassigned_in_chain = sum(1 for cell in chain if cell not in assignment)
+                    
+                    # Nếu chuỗi có ô trống (unfulfilled), ta phải tốn số phép gán bằng đúng số ô trống đó
+                    h_chains_cost += unassigned_in_chain
+
+    # 3. Để Heuristic này Admissible và có ý nghĩa thực tiễn, ta phải cộng thêm
+    # số lượng các ô trống nằm độc lập (không thuộc chuỗi bất đẳng thức nào).
+    total_unassigned = puzzle.N * puzzle.N - len(assignment)
+    cells_not_in_chains = total_unassigned - h_chains_cost
+
+    return h_chains_cost + cells_not_in_chains
+
+def h3_ac3(puzzle, assignment):
+    domains_cache = get_filtered_domains(puzzle, assignment, apply_ac3=True)
+    if domains_cache is None:
+        return float('inf')
+    # Điểm h = tổng kích thước các domain còn lại
+    return sum(len(d) for d in domains_cache.values())
+
 
 
 def _revise(puzzle, domains, xi, xj):
@@ -160,52 +193,40 @@ def _pick_cell_mrv(domains_cache):
     return best_cell, domains_cache.get(best_cell, set())
 
 
+
 # ================================================================
-# A* SOLVER CHINH
+# LỚP 3: A* SOLVER CHÍNH
 # ================================================================
 
 def astar_solve(puzzle, heuristic='h2', step_callback=None):
-    """
-    Giai Futoshiki bang A* Search.
-
-    Tham so:
-        puzzle    : FutoshikiPuzzle object
-        heuristic : 'h1' | 'h2' | 'h3'
-
-    Tra ve:
-        (assignment, stats) neu co loi giai
-        (None, stats)       neu vo nghiem
-    """
     heuristic_fn = {
         'h1': h1_unassigned,
-        'h2': h2_domain_wipeout,
+        'h2': h2_inequality_chains,
         'h3': h3_ac3,
     }.get(heuristic)
 
     if heuristic_fn is None:
-        raise ValueError(f"Heuristic '{heuristic}' khong hop le. Chon: h1, h2, h3")
+        raise ValueError("Heuristic không hợp lệ!")
 
     N = puzzle.N
     initial = build_initial_assignment(puzzle)
 
-    # Kiem tra ban dau
     h0 = heuristic_fn(puzzle, initial)
     if h0 == float('inf'):
         return None, {'nodes': 0, 'heuristic': heuristic}
 
-    # Priority queue: (f, g, counter, assignment)
     counter = 0
     g0 = len(initial)
-    heap = [(g0 + h0, g0, counter, initial)]
-
+    heap = [(g0 + h0, -g0, counter, initial)]
     visited = set()
-    nodes_expanded = 0
     step_count = 0
+    nodes_expanded = 0
     start_time = time.time()
 
     while heap:
-        f, g, _, assignment = heapq.heappop(heap)
-
+        f, neg_g, _, assignment = heapq.heappop(heap)
+        g = -neg_g
+        
         state_key = tuple(sorted(assignment.items()))
         if state_key in visited:
             continue
@@ -224,65 +245,41 @@ def astar_solve(puzzle, heuristic='h2', step_callback=None):
                 'step_number': step_count,
             })
 
-        # ── Goal check ──
+        
         if len(assignment) == N * N:
-            elapsed = time.time() - start_time
-            stats = {
-                'nodes'    : nodes_expanded,
-                'time'     : elapsed,
-                'heuristic': heuristic,
-            }
-            return assignment, stats
+            return assignment, {'nodes': nodes_expanded, 'time': time.time() - start_time, 'heuristic': heuristic}
 
-        # ── Tinh domain cho tat ca o chua gan ──
-        domains_cache = {}
-        dead_end = False
-        for r in range(N):
-            for c in range(N):
-                if (r, c) not in assignment:
-                    dom = compute_domain(puzzle, assignment, r, c)
-                    if len(dom) == 0:
-                        dead_end = True
-                        break
-                    domains_cache[(r, c)] = dom
-            if dead_end:
-                break
+        # ── 1. Tính Domains cho trạng thái HIỆN TẠI (Để MRV chọn ô) ──
+        # Nếu đang dùng h3, ta cho MRV hưởng ké sức mạnh của AC-3 để chọn ô thông minh
+        use_ac3 = (heuristic == 'h3')
+        domains_cache = get_filtered_domains(puzzle, assignment, apply_ac3=use_ac3)
+        
+        if domains_cache is None:
+            continue  # Dead-end
 
-        if dead_end:
-            continue
-
-        # ── Chon o tot nhat (MRV) ──
+        # ── 2. Chọn ô tốt nhất (MRV) ──
         cell, domain = _pick_cell_mrv(domains_cache)
         if cell is None:
             continue
 
+        # ── 3. Expand: Sinh nhánh con ──
         r, c = cell
-
-        # ── Expand: thu tung gia tri ──
         for v in sorted(domain):
             new_assignment = dict(assignment)
             new_assignment[(r, c)] = v
 
-            new_state_key = tuple(sorted(new_assignment.items()))
-            if new_state_key in visited:
-                continue
-
+            # ── 4. THẨM ĐỊNH NHÁNH CON (Gọi Heuristic) ──
             new_h = heuristic_fn(puzzle, new_assignment)
+            
             if new_h == float('inf'):
-                continue  # Prune
+                continue  # Bị Heuristic đánh trượt -> Prune ngay lập tức
 
             new_g = len(new_assignment)
             counter += 1
-            heapq.heappush(heap, (new_g + new_h, new_g, counter, new_assignment))
+            heapq.heappush(heap, (new_g + new_h, -new_g, counter, new_assignment))
 
-    # Khong tim duoc loi giai
-    elapsed = time.time() - start_time
-    stats = {
-        'nodes'    : nodes_expanded,
-        'time'     : elapsed,
-        'heuristic': heuristic,
-    }
-    return None, stats
+    return None, {'nodes': nodes_expanded, 'time': time.time() - start_time, 'heuristic': heuristic}
+
 
 
 # ================================================================
