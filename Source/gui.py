@@ -16,6 +16,7 @@ import time
 import os
 import sys
 import traceback
+from collections import deque
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
@@ -202,7 +203,7 @@ class FutoshikiApp(ctk.CTk):
         self.use_delay = tk.BooleanVar(value=True)
         self.step_count = 0
         self.solving = False
-        self._pending_steps = []
+        self._pending_steps = deque()
 
         self._build_ui()
 
@@ -463,7 +464,7 @@ class FutoshikiApp(ctk.CTk):
         self.pause_event.set()
         self.step_count = 0
         self.step_queue = queue.Queue()
-        self._pending_steps = []
+        self._pending_steps = deque()
 
         self._clear_log()
         self._reset_stats()
@@ -499,6 +500,7 @@ class FutoshikiApp(ctk.CTk):
         self.solver_thread = threading.Thread(
             target=self._solver_run, args=(self.puzzle, algo, h_key), daemon=True)
         self.solver_thread.start()
+        self._pending_steps = deque()
         self._poll()
 
     def _toggle_pause(self):
@@ -553,6 +555,7 @@ class FutoshikiApp(ctk.CTk):
             elif step_counter[0] % throttle == 0:
                 self.step_queue.put(info)
                 last_info[0] = None
+                time.sleep(0)
             else:
                 last_info[0] = info  # store for potential flush
 
@@ -591,9 +594,11 @@ class FutoshikiApp(ctk.CTk):
 
     def _poll(self):
         try:
-            while True:
+            count = 0
+            while count < 1000:
                 step = self.step_queue.get_nowait()
                 self._pending_steps.append(step)
+                count += 1
         except queue.Empty:
             pass
 
@@ -619,7 +624,7 @@ class FutoshikiApp(ctk.CTk):
         log_buffer = []
 
         while self._pending_steps and processed < batch_size:
-            step = self._pending_steps.pop(0)
+            step = self._pending_steps.popleft()
             t = step.get('type', '')
             
             # Done / Stopped / Error immediately abort the batch
@@ -706,7 +711,8 @@ class FutoshikiApp(ctk.CTk):
     def _log(self, txt, color=None):
         self.log.configure(state="normal")
         self.log.insert("end", txt + "\n")
-        self.log.see("end")
+        if self.step_delay_ms > 2 or "\u2705" in txt or "\u274c" in txt:
+            self.log.see("end")        
         self.log.configure(state="disabled")
 
     def _clear_log(self):
