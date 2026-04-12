@@ -144,6 +144,7 @@ def h3_ac3(puzzle, assignment):
         return float('inf')
     # Điểm h = tổng kích thước các domain còn lại
     return sum(len(d) for d in domains_cache.values())
+    # return len(domains_cache)
 
 
 
