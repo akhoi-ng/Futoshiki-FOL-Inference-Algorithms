@@ -129,14 +129,9 @@ def h2_inequality_chains(puzzle, assignment):
                     unassigned_in_chain = sum(1 for cell in chain if cell not in assignment)
                     
                     # Nếu chuỗi có ô trống (unfulfilled), ta phải tốn số phép gán bằng đúng số ô trống đó
-                    h_chains_cost += unassigned_in_chain
-
-    # 3. Để Heuristic này Admissible và có ý nghĩa thực tiễn, ta phải cộng thêm
-    # số lượng các ô trống nằm độc lập (không thuộc chuỗi bất đẳng thức nào).
-    total_unassigned = puzzle.N * puzzle.N - len(assignment)
-    cells_not_in_chains = total_unassigned - h_chains_cost
-
-    return h_chains_cost + cells_not_in_chains
+                    if unassigned_in_chain > 0:
+                        h_chains_cost += unassigned_in_chain
+    return h_chains_cost
 
 def h3_ac3(puzzle, assignment):
     domains_cache = get_filtered_domains(puzzle, assignment, apply_ac3=True)
@@ -144,7 +139,6 @@ def h3_ac3(puzzle, assignment):
         return float('inf')
     # Điểm h = tổng kích thước các domain còn lại
     return sum(len(d) for d in domains_cache.values())
-    # return len(domains_cache)
 
 
 
