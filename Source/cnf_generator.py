@@ -133,7 +133,6 @@ def generate_at_least_one(N):
     clauses = []
     for r in range(N):
         for c in range(N):
-            # Clause: it nhat 1 trong cac gia tri phai dung
             clause = [var_id(r, c, v, N) for v in range(1, N + 1)]
             clauses.append(clause)
     return clauses
