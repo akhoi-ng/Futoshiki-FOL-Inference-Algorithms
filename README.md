@@ -77,7 +77,6 @@ python main.py Inputs/input-01.txt cnf
 ### 2. Giao diện đồ họa (GUI)
 
 ```bash
-cd Source
 python main.py
 ```
 
